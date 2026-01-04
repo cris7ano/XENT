@@ -105,6 +105,11 @@ local C = {
 			accum = 0,
 			lastTrigger = 0,
 		},
+		instaSteal = {
+			enabled = false,
+			conn = nil,
+			marker = nil,
+		},
 		xray = {
 			enabled = false,
 			conn = nil,
@@ -219,6 +224,7 @@ local function markConfigDirty()
 		t.antiKnockback = C.state.antiKnockback.enabled
 		t.hitbox = C.state.hitbox.enabled
 		t.antiRagdoll = C.state.antiRagdoll.enabled
+		t.instaSteal = C.state.instaSteal.enabled
 		t.noAnimation = C.state.noAnimation.enabled
 		C.persistent.booster = C.persistent.booster or {}
 		C.persistent.booster.speed = C.persistent.booster.speed or 16
@@ -663,18 +669,18 @@ local autoGrabRow, autoGrabBtn, autoGrabKnob = toggleRow(mainHolder, "Auto Grab"
 autoGrabRow.Size = UDim2.new(1, 0, 0, 38)
 local xrayRow, xrayBtn, xrayKnob = toggleRow(mainHolder, "Xray")
 
-local noAnimRow, noAnimBtn, noAnimKnob = toggleRow(mainHolder, "No animation")
-noAnimRow.Size = UDim2.new(1, 0, 0, 38)
-local noAnimHint = Instance.new("TextLabel")
-noAnimHint.BackgroundTransparency = 1
-noAnimHint.Size = UDim2.new(1, -110, 0, 14)
-noAnimHint.Position = UDim2.new(0, 10, 0, 22)
-noAnimHint.Font = Enum.Font.Gotham
-noAnimHint.TextSize = 10
-noAnimHint.TextXAlignment = Enum.TextXAlignment.Left
-noAnimHint.TextColor3 = Color3.fromRGB(230, 180, 180)
-noAnimHint.Text = "Disables animations on the character"
-noAnimHint.Parent = noAnimRow
+local instaRow, instaBtn, instaKnob = toggleRow(mainHolder, "Insta Steal")
+instaRow.Size = UDim2.new(1, 0, 0, 38)
+local instaHint = Instance.new("TextLabel")
+instaHint.BackgroundTransparency = 1
+instaHint.Size = UDim2.new(1, -110, 0, 12)
+instaHint.Position = UDim2.new(0, 10, 0, 24)
+instaHint.Font = Enum.Font.Gotham
+instaHint.TextSize = 9
+instaHint.TextXAlignment = Enum.TextXAlignment.Left
+instaHint.TextColor3 = Color3.fromRGB(230, 180, 180)
+instaHint.Text = "Teleports when stealing with Flying Carpet equipped"
+instaHint.Parent = instaRow
 
 -- Misc toggles
 local brainRow, brainBtn, brainKnob = toggleRow(miscHolder, "Brainrot ESP")
@@ -700,6 +706,19 @@ aimHint.TextXAlignment = Enum.TextXAlignment.Left
 aimHint.TextColor3 = Color3.fromRGB(230, 180, 180)
 aimHint.Text = "Laser Cape , Web slinger , Paintball Gun"
 aimHint.Parent = aimbotRow
+
+local noAnimRow, noAnimBtn, noAnimKnob = toggleRow(miscHolder, "No animation")
+noAnimRow.Size = UDim2.new(1, 0, 0, 38)
+local noAnimHint = Instance.new("TextLabel")
+noAnimHint.BackgroundTransparency = 1
+noAnimHint.Size = UDim2.new(1, -110, 0, 14)
+noAnimHint.Position = UDim2.new(0, 10, 0, 22)
+noAnimHint.Font = Enum.Font.Gotham
+noAnimHint.TextSize = 10
+noAnimHint.TextXAlignment = Enum.TextXAlignment.Left
+noAnimHint.TextColor3 = Color3.fromRGB(230, 180, 180)
+noAnimHint.Text = "Disables animations on the character"
+noAnimHint.Parent = noAnimRow
 
 -- PvP helper toggles
 local antiKnockRow, antiKnockBtn, antiKnockKnob = toggleRow(pvpHolder, "Anti Knockback")
@@ -1377,6 +1396,247 @@ end
 
 autoGrabBtn.MouseButton1Click:Connect(function()
 	setAutoGrab(not C.state.autoGrab.enabled)
+end)
+
+-- Insta Steal (integrated simple steal listener)
+local function instaGetCharacter()
+	local char = player.Character
+	if not char or not char.Parent then
+		char = player.CharacterAdded:Wait()
+	end
+	return char
+end
+
+local function instaGetHumanoidRootPart()
+	local char = instaGetCharacter()
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function instaHasFlyingCarpetEquipped()
+	local char = instaGetCharacter()
+	if not char then return false end
+	for _, child in ipairs(char:GetChildren()) do
+		if child:IsA("Tool") then
+			local n = string.lower(child.Name)
+			if n:find("flying carpet", 1, true) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function instaGetOrCreateMarker(charName)
+	local state = C.state.instaSteal
+	if state.marker and state.marker.Parent then
+		return state.marker
+	end
+
+	local markerName = "XENT_StealMarker_" .. charName
+	local existing = workspace:FindFirstChild(markerName)
+	if existing and existing:IsA("BasePart") then
+		state.marker = existing
+		return existing
+	end
+
+	local marker = Instance.new("Part")
+	marker.Name = markerName
+	marker.Anchored = true
+	marker.CanCollide = false
+	marker.Size = Vector3.new(5, 0.2, 5)
+	marker.Material = Enum.Material.ForceField
+	marker.Color = Color3.fromRGB(0, 210, 255)
+	marker.Transparency = 0.7
+	marker.TopSurface = Enum.SurfaceType.Smooth
+	marker.BottomSurface = Enum.SurfaceType.Smooth
+
+	local ring = Instance.new("CylinderHandleAdornment")
+	ring.Name = "XENT_Ring"
+	ring.Adornee = marker
+	ring.AlwaysOnTop = true
+	ring.Color3 = marker.Color
+	ring.Radius = 2.5
+	ring.Height = 0.2
+	ring.Transparency = 0.25
+	ring.ZIndex = 2
+	ring.Parent = marker
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "XENT_StealBillboard"
+	billboard.AlwaysOnTop = true
+	billboard.Size = UDim2.new(0, 100, 0, 22)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.Adornee = marker
+	billboard.Parent = marker
+
+	local bg = Instance.new("Frame")
+	bg.Size = UDim2.new(1, 0, 1, 0)
+	bg.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
+	bg.BorderSizePixel = 0
+	bg.Parent = billboard
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = bg
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, -8, 1, -4)
+	label.Position = UDim2.new(0, 4, 0, 2)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.Text = "STEAL POS"
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.Parent = bg
+
+	marker.Parent = workspace
+	state.marker = marker
+	return marker
+end
+
+local function instaComputeTeleportCFrame()
+	local char = instaGetCharacter()
+	local hrp = instaGetHumanoidRootPart()
+	if not char or not hrp then return nil end
+
+	local username = player.Name
+	local displayName = player.DisplayName or username
+	local lowerUsername = string.lower(username)
+	local lowerDisplayName = string.lower(displayName)
+
+	local targetPart
+	local targetFace
+
+	for _, inst in ipairs(workspace:GetDescendants()) do
+		if inst:IsA("SurfaceGui") then
+			local gui = inst
+			local hasMatch = false
+			for _, d in ipairs(gui:GetDescendants()) do
+				if d:IsA("TextLabel") or d:IsA("TextBox") then
+					local text = d.Text or ""
+					local lower = string.lower(text)
+					if lower:find(lowerDisplayName, 1, true) or lower:find(lowerUsername, 1, true) then
+						hasMatch = true
+						break
+					end
+				end
+			end
+			if hasMatch then
+				local adornee = gui.Adornee
+				local parentPart = gui.Parent
+				if adornee and adornee:IsA("BasePart") then
+					targetPart = adornee
+					targetFace = gui.Face
+				elseif parentPart and parentPart:IsA("BasePart") then
+					targetPart = parentPart
+					targetFace = gui.Face
+				end
+				if targetPart then break end
+			end
+		end
+	end
+
+	if not targetPart then return nil end
+
+	local face = targetFace or Enum.NormalId.Front
+	local partCFrame = targetPart.CFrame
+	local normal
+	if face == Enum.NormalId.Front then
+		normal = partCFrame.LookVector
+	elseif face == Enum.NormalId.Back then
+		normal = -partCFrame.LookVector
+	elseif face == Enum.NormalId.Right then
+		normal = partCFrame.RightVector
+	elseif face == Enum.NormalId.Left then
+		normal = -partCFrame.RightVector
+	elseif face == Enum.NormalId.Top then
+		normal = partCFrame.UpVector
+	elseif face == Enum.NormalId.Bottom then
+		normal = -partCFrame.UpVector
+	else
+		normal = partCFrame.LookVector
+	end
+
+	local offset
+	if face == Enum.NormalId.Right or face == Enum.NormalId.Left then
+		offset = targetPart.Size.X * 0.5
+	elseif face == Enum.NormalId.Top or face == Enum.NormalId.Bottom then
+		offset = targetPart.Size.Y * 0.5
+	else
+		offset = targetPart.Size.Z * 0.5
+	end
+
+	local surfacePos = targetPart.Position + normal * offset
+	local basePos = surfacePos + normal * 32 + Vector3.new(0, -18, 0)
+
+	local marker = instaGetOrCreateMarker(username)
+	marker.CFrame = CFrame.new(basePos)
+
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	local hip = humanoid and humanoid.HipHeight or 3
+	local finalPos = basePos + Vector3.new(0, hip + 2, 0)
+	local lookTarget = surfacePos
+	return CFrame.new(finalPos, lookTarget)
+end
+
+local function instaPromptLooksLikeSteal(prompt)
+	local s = ""
+	if prompt.ActionText then s = s .. " " .. prompt.ActionText end
+	if prompt.ObjectText then s = s .. " " .. prompt.ObjectText end
+	if prompt.Name then s = s .. " " .. prompt.Name end
+	s = string.lower(s)
+	return s:find("steal", 1, true) ~= nil
+end
+
+local function instaOnPromptTriggered(prompt, who)
+	if who ~= player then return end
+	if not instaPromptLooksLikeSteal(prompt) then return end
+	if not instaHasFlyingCarpetEquipped() then return end
+
+	local char = instaGetCharacter()
+	local hrp = instaGetHumanoidRootPart()
+	if not char or not hrp then return end
+	local cf = instaComputeTeleportCFrame()
+	if not cf then return end
+
+	pcall(function()
+		if char.PivotTo then
+			char:PivotTo(cf)
+		else
+			hrp.CFrame = cf
+		end
+		if hrp.AssemblyLinearVelocity then
+			hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		else
+			hrp.Velocity = Vector3.new(0, 0, 0)
+			hrp.RotVelocity = Vector3.new(0, 0, 0)
+		end
+	end)
+end
+
+local function setInstaSteal(on)
+	if C.state.instaSteal.enabled == on then return end
+	C.state.instaSteal.enabled = on
+	setBinaryVisual(instaBtn, instaKnob, on)
+	if C.state.instaSteal.conn then
+		C.state.instaSteal.conn:Disconnect()
+		C.state.instaSteal.conn = nil
+	end
+	if on then
+		C.state.instaSteal.conn = ProximityPromptService.PromptTriggered:Connect(instaOnPromptTriggered)
+	else
+		local m = C.state.instaSteal.marker
+		if m and m.Parent then m:Destroy() end
+		C.state.instaSteal.marker = nil
+	end
+	markConfigDirty()
+end
+
+instaBtn.MouseButton1Click:Connect(function()
+	setInstaSteal(not C.state.instaSteal.enabled)
 end)
 
 -- Auto kick after steal (simple)
@@ -2384,6 +2644,7 @@ if C.persistent.saveConfigs then
 	if t.antiKnockback then setAntiKnockback(true) end
 	if t.hitbox then setHitbox(true) end
 	if t.antiRagdoll then setAntiRagdoll(true) end
+	if t.instaSteal then setInstaSteal(true) end
 end
 
 -- Auto-enable world optimizations and ESP
