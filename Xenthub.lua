@@ -1,4 +1,3 @@
-
 -- XENT HUB - Red/Dark Minimal UI (Compact Version)
 -- This is a simplified, low-local-count variant of XentHubRedUI.lua.
 -- Place as a LocalScript (e.g. StarterPlayer > StarterPlayerScripts).
@@ -109,6 +108,9 @@ local C = {
 			enabled = false,
 			conn = nil,
 			marker = nil,
+			torsoAtt = nil,
+			markerAtt = nil,
+			beam = nil,
 		},
 		xray = {
 			enabled = false,
@@ -270,15 +272,19 @@ local function makeDraggable(frame, handle)
 	handle = handle or frame
 	local dragging = false
 	local dragStart, startPos
+	local hasMoved = false
+	local dragThreshold = 8 -- pixels before we treat it as an intentional drag (helps mobile)
 
 	handle.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
+			hasMoved = false
 			dragStart = input.Position
 			startPos = frame.Position
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
+					hasMoved = false
 				end
 			end)
 		end
@@ -287,6 +293,12 @@ local function makeDraggable(frame, handle)
 	UserInputService.InputChanged:Connect(function(input)
 		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			local d = input.Position - dragStart
+			if not hasMoved then
+				if d.Magnitude < dragThreshold then
+					return
+				end
+				hasMoved = true
+			end
 			frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
 		end
 	end)
@@ -468,20 +480,43 @@ closeBtn.Parent = top
 rounded(closeBtn, 6)
 stroked(closeBtn, Color3.fromRGB(255, 70, 90), 1.4, 0.15)
 
-local restoreBtn = Instance.new("TextButton")
+local restoreBtn = Instance.new("Frame")
 restoreBtn.Name = "Restore"
-restoreBtn.Size = UDim2.new(0, 52, 0, 52)
+restoreBtn.Size = UDim2.new(0, 110, 0, 32)
 restoreBtn.Position = UDim2.new(0, 26, 0.78, 0)
-restoreBtn.BackgroundColor3 = Color3.fromRGB(30, 0, 4)
-restoreBtn.Text = "X"
-restoreBtn.Font = Enum.Font.GothamBold
-restoreBtn.TextSize = 20
-restoreBtn.TextColor3 = Color3.fromRGB(255, 130, 130)
-restoreBtn.AutoButtonColor = false
+restoreBtn.BackgroundColor3 = Color3.fromRGB(30, 0, 8)
+restoreBtn.BorderSizePixel = 0
 restoreBtn.Visible = false
 restoreBtn.Parent = gui
-rounded(restoreBtn, 26)
-stroked(restoreBtn, Color3.fromRGB(255, 60, 90), 2, 0.12)
+rounded(restoreBtn, 16)
+stroked(restoreBtn, Color3.fromRGB(255, 70, 90), 2, 0.18)
+
+local restoreLabel = Instance.new("TextLabel")
+restoreLabel.BackgroundTransparency = 1
+restoreLabel.Size = UDim2.new(1, -32, 1, 0)
+restoreLabel.Position = UDim2.new(0, 10, 0, 0)
+restoreLabel.Font = Enum.Font.GothamBold
+restoreLabel.TextSize = 14
+restoreLabel.TextXAlignment = Enum.TextXAlignment.Left
+restoreLabel.Text = "XENT"
+restoreLabel.TextColor3 = Color3.fromRGB(255, 220, 220)
+restoreLabel.Parent = restoreBtn
+
+local restoreCross = Instance.new("TextButton")
+restoreCross.Name = "RestoreCross"
+restoreCross.AnchorPoint = Vector2.new(1, 0.5)
+restoreCross.Position = UDim2.new(1, -6, 0.5, 0)
+restoreCross.Size = UDim2.new(0, 20, 0, 20)
+restoreCross.BackgroundColor3 = Color3.fromRGB(60, 0, 12)
+restoreCross.Text = "X"
+restoreCross.Font = Enum.Font.GothamBold
+restoreCross.TextSize = 14
+restoreCross.TextColor3 = Color3.fromRGB(255, 190, 190)
+restoreCross.AutoButtonColor = true
+restoreCross.BorderSizePixel = 0
+restoreCross.Parent = restoreBtn
+rounded(restoreCross, 10)
+stroked(restoreCross, Color3.fromRGB(255, 100, 120), 1.4, 0.18)
 
 makeDraggable(main, top)
 makeDraggable(restoreBtn, restoreBtn)
@@ -491,7 +526,7 @@ closeBtn.MouseButton1Click:Connect(function()
 	restoreBtn.Visible = true
 end)
 
-restoreBtn.MouseButton1Click:Connect(function()
+restoreCross.MouseButton1Click:Connect(function()
 	main.Visible = true
 	restoreBtn.Visible = false
 end)
@@ -1435,6 +1470,10 @@ local function instaGetOrCreateMarker(charName)
 	local markerName = "XENT_StealMarker_" .. charName
 	local existing = workspace:FindFirstChild(markerName)
 	if existing and existing:IsA("BasePart") then
+		local oldRing = existing:FindFirstChild("XENT_Ring")
+		if oldRing then
+			oldRing:Destroy()
+		end
 		state.marker = existing
 		return existing
 	end
@@ -1449,17 +1488,6 @@ local function instaGetOrCreateMarker(charName)
 	marker.Transparency = 0.7
 	marker.TopSurface = Enum.SurfaceType.Smooth
 	marker.BottomSurface = Enum.SurfaceType.Smooth
-
-	local ring = Instance.new("CylinderHandleAdornment")
-	ring.Name = "XENT_Ring"
-	ring.Adornee = marker
-	ring.AlwaysOnTop = true
-	ring.Color3 = marker.Color
-	ring.Radius = 2.5
-	ring.Height = 0.2
-	ring.Transparency = 0.25
-	ring.ZIndex = 2
-	ring.Parent = marker
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "XENT_StealBillboard"
@@ -1524,7 +1552,7 @@ local function instaComputeTeleportCFrame()
 				end
 			end
 			if hasMatch then
-				local adornee = gui.Adornee
+				local adornee = gui.Adornee or gui.Parent
 				local parentPart = gui.Parent
 				if adornee and adornee:IsA("BasePart") then
 					targetPart = adornee
@@ -1569,7 +1597,9 @@ local function instaComputeTeleportCFrame()
 	end
 
 	local surfacePos = targetPart.Position + normal * offset
-	local basePos = surfacePos + normal * 32 + Vector3.new(0, -18, 0)
+	-- 36 studs forward from the surface, and 5 studs to the "left" of the sign (negative RightVector)
+	local leftOffset = -partCFrame.RightVector * 5
+	local basePos = surfacePos + normal * 36 + leftOffset + Vector3.new(0, -18, 0)
 
 	local marker = instaGetOrCreateMarker(username)
 	marker.CFrame = CFrame.new(basePos)
@@ -1617,6 +1647,88 @@ local function instaOnPromptTriggered(prompt, who)
 	end)
 end
 
+local function instaSetMarkerVisible(visible)
+	local state = C.state.instaSteal
+	local marker = state.marker
+	if not marker or not marker.Parent then return end
+	marker.Transparency = visible and 0.7 or 1
+	local ring = marker:FindFirstChild("XENT_Ring")
+	if ring and ring:IsA("CylinderHandleAdornment") then
+		ring.Visible = visible
+	end
+	local billboard = marker:FindFirstChild("XENT_StealBillboard")
+	if billboard and billboard:IsA("BillboardGui") then
+		billboard.Enabled = visible
+	end
+end
+
+local function instaClearVisuals()
+	local state = C.state.instaSteal
+	if state.beam then
+		if state.beam.Parent then state.beam:Destroy() end
+		state.beam = nil
+	end
+	if state.torsoAtt then
+		if state.torsoAtt.Parent then state.torsoAtt:Destroy() end
+		state.torsoAtt = nil
+	end
+	if state.markerAtt then
+		if state.markerAtt.Parent then state.markerAtt:Destroy() end
+		state.markerAtt = nil
+	end
+end
+
+local function instaUpdateBeamVisuals()
+	if not C.state.instaSteal.enabled then
+		instaClearVisuals()
+		instaSetMarkerVisible(false)
+		return
+	end
+	local char = instaGetCharacter()
+	if not char then return end
+	local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or instaGetHumanoidRootPart()
+	if not torso then return end
+	local state = C.state.instaSteal
+	local marker = state.marker
+	if not marker or not marker.Parent then
+		instaClearVisuals()
+		instaSetMarkerVisible(false)
+		return
+	end
+	instaSetMarkerVisible(true)
+	if not state.torsoAtt or state.torsoAtt.Parent ~= torso then
+		if state.torsoAtt and state.torsoAtt.Parent then state.torsoAtt:Destroy() end
+		local att = Instance.new("Attachment")
+		att.Name = "XentInstaTorsoAtt"
+		att.Parent = torso
+		state.torsoAtt = att
+	end
+	if not state.markerAtt or state.markerAtt.Parent ~= marker then
+		if state.markerAtt and state.markerAtt.Parent then state.markerAtt:Destroy() end
+		local attM = Instance.new("Attachment")
+		attM.Name = "XentInstaMarkerAtt"
+		attM.Parent = marker
+		state.markerAtt = attM
+	end
+	if not state.beam or not state.beam.Parent then
+		if state.beam and state.beam.Parent then state.beam:Destroy() end
+		local beam = Instance.new("Beam")
+		beam.Name = "XentInstaBeam"
+		beam.Attachment0 = state.torsoAtt
+		beam.Attachment1 = state.markerAtt
+		beam.Width0 = 0.25
+		beam.Width1 = 0.25
+		beam.FaceCamera = true
+		beam.Color = ColorSequence.new(Color3.fromRGB(60, 0, 0), Color3.fromRGB(180, 0, 0))
+		beam.Transparency = NumberSequence.new(0.1)
+		beam.Parent = torso
+		state.beam = beam
+	else
+		state.beam.Attachment0 = state.torsoAtt
+		state.beam.Attachment1 = state.markerAtt
+	end
+end
+
 local function setInstaSteal(on)
 	if C.state.instaSteal.enabled == on then return end
 	C.state.instaSteal.enabled = on
@@ -1627,7 +1739,12 @@ local function setInstaSteal(on)
 	end
 	if on then
 		C.state.instaSteal.conn = ProximityPromptService.PromptTriggered:Connect(instaOnPromptTriggered)
+		-- First-time enable: compute marker/teleport position once, then build visuals
+		instaComputeTeleportCFrame()
+		instaUpdateBeamVisuals()
 	else
+		instaClearVisuals()
+		instaSetMarkerVisible(false)
 		local m = C.state.instaSteal.marker
 		if m and m.Parent then m:Destroy() end
 		C.state.instaSteal.marker = nil
@@ -1637,6 +1754,35 @@ end
 
 instaBtn.MouseButton1Click:Connect(function()
 	setInstaSteal(not C.state.instaSteal.enabled)
+end)
+
+-- Keep Insta Steal beam correctly attached to our torso across resets
+RunService.Heartbeat:Connect(function()
+	if not C.state.instaSteal.enabled then return end
+	local char = player.Character
+	if not char or not char.Parent then
+		instaClearVisuals()
+		return
+	end
+	local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+	if not torso then return end
+	local state = C.state.instaSteal
+	local needsUpdate = false
+	if not state.marker or not state.marker.Parent then
+		needsUpdate = true
+	end
+	if not state.torsoAtt or state.torsoAtt.Parent ~= torso then
+		needsUpdate = true
+	end
+	if not state.markerAtt or (state.marker and state.markerAtt.Parent ~= state.marker) then
+		needsUpdate = true
+	end
+	if not state.beam or not state.beam.Parent then
+		needsUpdate = true
+	end
+	if needsUpdate then
+		instaUpdateBeamVisuals()
+	end
 end)
 
 -- Auto kick after steal (simple)
@@ -2438,6 +2584,12 @@ local function getBaseCooldownInfoFromGui(sourceGui)
 	for _, inst in ipairs(sourceGui:GetDescendants()) do
 		if inst:IsA("TextLabel") or inst:IsA("TextBox") then
 			local text = inst.Text
+			if type(text) == "string" and text ~= "" and string.find(text, "M/s", 1, true) then
+				local numStr = string.match(text, "%$?%s*([%d%.]+)%s*[Mm]/s")
+				if numStr then
+					seconds = tonumber(numStr)
+				end
+			end
 			if type(text) == "string" and text ~= "" then
 				local lower = string.lower(text)
 				if string.find(lower, "lock base", 1, true) then
@@ -2448,12 +2600,6 @@ local function getBaseCooldownInfoFromGui(sourceGui)
 				end
 				if string.find(lower, "locked", 1, true) then
 					hasLockWord = true
-				end
-				if not seconds then
-					local num = string.match(text, "(%d+)%s*[sS]")
-					if num then
-						seconds = tonumber(num)
-					end
 				end
 			end
 		end
@@ -2609,6 +2755,9 @@ local function setBaseCooldownEnabled(on)
 	C.state.baseCooldown.enabled = on
 	if on then
 		createBaseCooldownOverlays()
+		if C.state.instaSteal.enabled then
+			instaUpdateBeamVisuals()
+		end
 		startBaseCooldownUpdater()
 	else
 		-- updater loop handles cleanup when it exits
@@ -2619,6 +2768,17 @@ end
 Players.PlayerAdded:Connect(function()
 	if C.state.baseCooldown.enabled then
 		createBaseCooldownOverlays()
+		if C.state.instaSteal.enabled then
+			instaUpdateBeamVisuals()
+		end
+	end
+end)
+
+-- When our character respawns, restore Insta Steal visuals if enabled
+player.CharacterAdded:Connect(function()
+	if C.state.instaSteal.enabled then
+		task.wait(1)
+		instaUpdateBeamVisuals()
 	end
 end)
 
@@ -2652,4 +2812,3 @@ applySmoothWorld()
 startInvisibleWalls()
 setBaseCooldownEnabled(true)
 enableEspPlayers()
-
